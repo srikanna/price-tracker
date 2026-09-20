@@ -44,23 +44,90 @@
                         Cloud Firestore & Run
                     </span>
                 </div>
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-3">
                     <a href="{{ url_for('index') }}" class="text-sm font-medium text-slate-700 hover:text-indigo-600 flex items-center space-x-1">
                         <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
                         <span>Dashboard</span>
                     </a>
-                    <button onclick="triggerScrapeAll()" class="hidden md:inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 transition-colors">
-                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="refresh-all-icon"></i>
-                        <span>Check All Prices</span>
+
+                    <button onclick="openChatModal()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors">
+                        <i data-lucide="bell-ring" class="w-3.5 h-3.5 text-emerald-600"></i>
+                        <span>Google Chat Alerts</span>
                     </button>
-                    <a href="https://console.cloud.google.com/firestore" target="_blank" class="text-xs text-slate-500 hover:text-indigo-600 flex items-center space-x-1">
+
+                    <button onclick="triggerScrapeAll()" class="hidden md:inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 transition-colors">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="refresh-all-icon"></i>
+                        <span>Check All</span>
+                    </button>
+                    
+                    <a href="https://console.cloud.google.com/firestore" target="_blank" class="hidden sm:flex text-xs text-slate-500 hover:text-indigo-600 items-center space-x-1">
                         <i data-lucide="database" class="w-3.5 h-3.5"></i>
-                        <span>Firestore DB</span>
+                        <span>Firestore</span>
                     </a>
                 </div>
             </div>
         </div>
     </nav>
+
+    <!-- Google Chat Webhook Modal -->
+    <div id="chat-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div class="flex items-start justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <i data-lucide="message-square" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900">Google Chat Spaces Alerts</h3>
+                        <p class="text-xs text-slate-500">Receive rich Card v2 price drop notifications</p>
+                    </div>
+                </div>
+                <button onclick="closeChatModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1.5">
+                <p class="font-semibold text-slate-800">How to get your Webhook URL:</p>
+                <ol class="list-decimal pl-4 space-y-0.5 text-slate-500">
+                    <li>Open your Space in <b>Google Chat</b> or <b>Gmail</b></li>
+                    <li>Click the Space title → <b>Apps & integrations</b> → <b>Webhooks</b></li>
+                    <li>Click <b>Add webhook</b>, name it "PricePulse", and copy the URL</li>
+                </ol>
+            </div>
+
+            <form action="{{ url_for('save_chat_settings') }}" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Incoming Webhook URL</label>
+                    <input 
+                        type="url" 
+                        name="webhook_url" 
+                        id="chat-webhook-input"
+                        placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=..."
+                        value="{{ google_chat_webhook or '' }}"
+                        required
+                        class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
+                    >
+                </div>
+
+                <div class="flex items-center justify-between pt-2">
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors">
+                        Save Webhook
+                    </button>
+                </div>
+            </form>
+
+            <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-xs text-slate-500">Test current setup:</span>
+                <form action="{{ url_for('test_chat') }}" method="POST" class="inline">
+                    <button type="submit" class="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg transition-colors">
+                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        <span>Send Test Alert Card</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Flash Messages Container -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 w-full">
@@ -113,6 +180,22 @@
     <script>
         lucide.createIcons();
 
+        function openChatModal() {
+            const m = document.getElementById('chat-modal');
+            if (m) {
+                m.classList.remove('hidden');
+                m.classList.add('flex');
+            }
+        }
+
+        function closeChatModal() {
+            const m = document.getElementById('chat-modal');
+            if (m) {
+                m.classList.add('hidden');
+                m.classList.remove('flex');
+            }
+        }
+
         function triggerScrapeAll() {
             const icon = document.getElementById('refresh-all-icon');
             if (icon) icon.classList.add('animate-spin');
@@ -126,7 +209,7 @@
             })
             .then(res => res.json())
             .then(data => {
-                alert(`Scrape cycle complete!\nTotal checked: ${data.total}\nUpdated: ${data.updated}\nFailed: ${data.failed}`);
+                alert(`Scrape cycle complete!\nActive checked: ${data.total_active || data.total}\nUpdated: ${data.updated}\nAlerts Sent: ${data.alerts_sent || 0}`);
                 window.location.reload();
             })
             .catch(err => {

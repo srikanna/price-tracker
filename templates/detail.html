@@ -110,8 +110,36 @@
                         <span>Go to Store Product Page</span>
                     </a>
 
+                    <!-- Per-Item Alert Toggle Button -->
+                    <form action="{{ url_for('toggle_alert', product_id=product.id) }}" method="POST" class="inline">
+                        <button type="submit" 
+                                class="inline-flex items-center px-3.5 py-2 text-xs font-semibold rounded-lg border shadow-sm transition-colors {% if product.alerts_enabled %}border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100{% else %}border-slate-300 bg-white text-slate-500 hover:bg-slate-50{% endif %}">
+                            {% if product.alerts_enabled %}
+                                <i data-lucide="bell" class="w-3.5 h-3.5 mr-1.5 text-emerald-600"></i>
+                                <span>Google Chat Alerts: ON</span>
+                            {% else %}
+                                <i data-lucide="bell-off" class="w-3.5 h-3.5 mr-1.5 text-slate-400"></i>
+                                <span>Google Chat Alerts: OFF</span>
+                            {% endif %}
+                        </button>
+                    </form>
+
+                    <!-- Archive / Unarchive Button -->
+                    <form action="{{ url_for('toggle_archive', product_id=product.id) }}" method="POST" class="inline">
+                        <button type="submit" 
+                                class="inline-flex items-center px-3.5 py-2 text-xs font-semibold rounded-lg border shadow-sm transition-colors {% if product.is_archived %}border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100{% else %}border-slate-300 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+                            {% if product.is_archived %}
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 mr-1.5 text-indigo-600"></i>
+                                <span>Resume Daily Tracking</span>
+                            {% else %}
+                                <i data-lucide="archive" class="w-3.5 h-3.5 mr-1.5 text-slate-500"></i>
+                                <span>Pause Tracking (Archive)</span>
+                            {% endif %}
+                        </button>
+                    </form>
+
                     <form action="{{ url_for('refresh_product', product_id=product.id) }}" method="POST" class="inline">
-                        <button type="submit" class="inline-flex items-center px-3 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shadow-sm transition-colors">
+                        <button type="submit" class="inline-flex items-center px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shadow-sm transition-colors">
                             <i data-lucide="refresh-cw" class="w-3.5 h-3.5 mr-1.5"></i>
                             <span>Check Price Now</span>
                         </button>
