@@ -9,7 +9,7 @@
                 Track Product Prices Automatically
             </h1>
             <p class="mt-2 text-sm text-slate-600">
-                Paste any product URL from Amazon, Walmart, Target, eBay, Shopify, or other online retailers. We will extract the product name, price, and track historical trends in Google Cloud Firestore.
+                Paste any product URL from Costco, Amazon, Walmart, Target, Best Buy, or other online retailers. We will monitor the price and store historical trends in Google Cloud Firestore.
             </p>
         </div>
 
@@ -24,7 +24,7 @@
                         name="url" 
                         id="product-url-input"
                         required 
-                        placeholder="https://www.example.com/product/..." 
+                        placeholder="https://www.costco.com/... or https://www.amazon.com/..." 
                         class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm"
                     >
                 </div>
@@ -39,55 +39,152 @@
             </div>
             
             <!-- Quick Demo URLs -->
-            <div class="mt-3 flex items-center gap-2 text-xs text-slate-500">
-                <span class="font-medium">Quick Test:</span>
+            <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span class="font-medium text-slate-600">Quick Test:</span>
                 <button type="button" onclick="fillUrl('https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html')" class="hover:text-indigo-600 underline">Sample Book 1 (£51.77)</button>
                 <span>•</span>
                 <button type="button" onclick="fillUrl('https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html')" class="hover:text-indigo-600 underline">Sample Book 2 (£53.74)</button>
+                <span>•</span>
+                <button type="button" onclick="fillUrl('https://books.toscrape.com/catalogue/soumission_998/index.html')" class="hover:text-indigo-600 underline">Sample Book 3 (£50.10)</button>
             </div>
         </form>
     </div>
 
-    <!-- Analytics / Stats Row -->
+    <!-- Analytics / Stats Row (Clickable Filter Cards) -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <!-- Card 1: All Products -->
+        <a href="{{ url_for('index', filter='all', site=selected_site) }}" 
+           class="p-5 rounded-xl border shadow-sm transition-all flex items-center justify-between group cursor-pointer
+                  {% if filter_type == 'all' %} bg-indigo-50/70 border-indigo-300 ring-2 ring-indigo-500/20 {% else %} bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md {% endif %}">
             <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tracked Products</p>
+                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Total Products</p>
                 <p class="text-2xl font-bold text-slate-900 mt-1">{{ total_products }}</p>
+                <span class="text-[11px] text-slate-400 mt-0.5 inline-block">Click to view all</span>
             </div>
-            <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i data-lucide="shopping-bag" class="w-5 h-5"></i>
             </div>
-        </div>
+        </a>
 
+        <!-- Card 2: Average Price -->
         <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
                 <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Average Price</p>
                 <p class="text-2xl font-bold text-slate-900 mt-1">${{ "%.2f"|format(avg_price) }}</p>
+                <span class="text-[11px] text-slate-400 mt-0.5 inline-block">Across tracked items</span>
             </div>
-            <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+            <div class="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
                 <i data-lucide="tag" class="w-5 h-5"></i>
             </div>
         </div>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <!-- Card 3: Price Drops (Clickable) -->
+        <a href="{{ url_for('index', filter='drops', site=selected_site) }}" 
+           class="p-5 rounded-xl border shadow-sm transition-all flex items-center justify-between group cursor-pointer
+                  {% if filter_type == 'drops' %} bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-500/20 {% else %} bg-white border-slate-200 hover:border-emerald-300 hover:shadow-md {% endif %}">
             <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Price Drops</p>
+                <p class="text-xs font-semibold text-emerald-700 uppercase tracking-wider group-hover:text-emerald-800 transition-colors">Price Drops</p>
                 <p class="text-2xl font-bold text-emerald-600 mt-1">{{ price_drops }}</p>
+                <span class="text-[11px] text-emerald-600/80 mt-0.5 inline-block">Click to filter drops</span>
             </div>
-            <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i data-lucide="arrow-down-right" class="w-5 h-5"></i>
             </div>
-        </div>
+        </a>
 
-        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <!-- Card 4: Price Hikes (Clickable) -->
+        <a href="{{ url_for('index', filter='hikes', site=selected_site) }}" 
+           class="p-5 rounded-xl border shadow-sm transition-all flex items-center justify-between group cursor-pointer
+                  {% if filter_type == 'hikes' %} bg-rose-50/70 border-rose-300 ring-2 ring-rose-500/20 {% else %} bg-white border-slate-200 hover:border-rose-300 hover:shadow-md {% endif %}">
             <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Price Hikes</p>
+                <p class="text-xs font-semibold text-rose-700 uppercase tracking-wider group-hover:text-rose-800 transition-colors">Price Hikes</p>
                 <p class="text-2xl font-bold text-rose-600 mt-1">{{ price_hikes }}</p>
+                <span class="text-[11px] text-rose-600/80 mt-0.5 inline-block">Click to filter hikes</span>
             </div>
-            <div class="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+            <div class="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
                 <i data-lucide="arrow-up-right" class="w-5 h-5"></i>
             </div>
+        </a>
+    </div>
+
+    <!-- Products Filter & Search Bar -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5">
+        <form method="GET" action="{{ url_for('index') }}" class="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
+            <!-- Hidden filter preserved -->
+            <input type="hidden" name="filter" value="{{ filter_type }}">
+
+            <!-- Left: Search Box -->
+            <div class="relative flex-grow max-w-md">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </div>
+                <input 
+                    type="text" 
+                    name="q" 
+                    value="{{ search_query }}"
+                    placeholder="Search by product name, retailer, or URL..." 
+                    class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                >
+            </div>
+
+            <!-- Right: Filter by Retailer / Store -->
+            <div class="flex flex-wrap items-center gap-3">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="store" class="w-4 h-4 text-slate-400"></i>
+                    <span class="text-xs font-semibold text-slate-600">Store:</span>
+                    <select 
+                        name="site" 
+                        onchange="this.form.submit()"
+                        class="px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                        <option value="all" {% if selected_site == 'all' %}selected{% endif %}>All Retailers ({{ total_products }})</option>
+                        {% for site in sites %}
+                            <option value="{{ site }}" {% if selected_site|lower == site|lower %}selected{% endif %}>
+                                {{ site }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Submit / Clear -->
+                <button type="submit" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors">
+                    Filter
+                </button>
+                {% if filter_type != 'all' or selected_site != 'all' or search_query %}
+                    <a href="{{ url_for('index') }}" class="px-3.5 py-2 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-lg border border-rose-200 transition-colors">
+                        Clear All
+                    </a>
+                {% endif %}
+            </div>
+        </form>
+
+        <!-- Filter Status Pills / Tabs -->
+        <div class="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+            <span class="text-slate-400 font-medium mr-1">Status:</span>
+            
+            <a href="{{ url_for('index', filter='all', site=selected_site, q=search_query) }}" 
+               class="px-3 py-1.5 rounded-full font-medium transition-colors
+                      {% if filter_type == 'all' %} bg-indigo-600 text-white {% else %} bg-slate-100 text-slate-700 hover:bg-slate-200 {% endif %}">
+                All Products ({{ total_products }})
+            </a>
+
+            <a href="{{ url_for('index', filter='drops', site=selected_site, q=search_query) }}" 
+               class="px-3 py-1.5 rounded-full font-medium transition-colors flex items-center space-x-1
+                      {% if filter_type == 'drops' %} bg-emerald-600 text-white {% else %} bg-emerald-50 text-emerald-700 hover:bg-emerald-100 {% endif %}">
+                <span>🔥 Price Drops ({{ price_drops }})</span>
+            </a>
+
+            <a href="{{ url_for('index', filter='hikes', site=selected_site, q=search_query) }}" 
+               class="px-3 py-1.5 rounded-full font-medium transition-colors flex items-center space-x-1
+                      {% if filter_type == 'hikes' %} bg-rose-600 text-white {% else %} bg-rose-50 text-rose-700 hover:bg-rose-100 {% endif %}">
+                <span>📈 Price Hikes ({{ price_hikes }})</span>
+            </a>
+
+            <a href="{{ url_for('index', filter='lows', site=selected_site, q=search_query) }}" 
+               class="px-3 py-1.5 rounded-full font-medium transition-colors flex items-center space-x-1
+                      {% if filter_type == 'lows' %} bg-amber-600 text-white {% else %} bg-amber-50 text-amber-800 hover:bg-amber-100 {% endif %}">
+                <span>⭐ All-Time Lows ({{ all_time_lows }})</span>
+            </a>
         </div>
     </div>
 
@@ -96,9 +193,13 @@
         <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <h2 class="text-base font-semibold text-slate-900 flex items-center space-x-2">
                 <i data-lucide="list" class="w-4 h-4 text-indigo-600"></i>
-                <span>All Tracked Items</span>
+                <span>Tracked Items ({{ products|length }})</span>
             </h2>
-            <span class="text-xs text-slate-500">{{ products|length }} item(s) stored in Firestore</span>
+            {% if filter_type != 'all' or selected_site != 'all' or search_query %}
+                <span class="text-xs px-2.5 py-1 bg-amber-50 text-amber-800 rounded-md border border-amber-200 font-medium">
+                    Filtered View Active
+                </span>
+            {% endif %}
         </div>
 
         {% if products %}
@@ -115,27 +216,59 @@
                                 </div>
                             {% endif %}
 
-                            <div class="min-w-0 flex-grow">
+                            <div class="min-w-0 flex-grow space-y-1">
+                                <!-- Product Name -->
                                 <a href="{{ url_for('product_detail', product_id=prod.id) }}" class="text-base font-semibold text-slate-900 hover:text-indigo-600 truncate block">
                                     {{ prod.name }}
                                 </a>
-                                <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
-                                    <span class="flex items-center space-x-1">
+
+                                <!-- Retailer / Site Tag & Meta -->
+                                <div class="flex flex-wrap items-center gap-2 text-xs">
+                                    <!-- Store Badge -->
+                                    {% if prod.site_name == 'Costco' %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">
+                                            <i data-lucide="store" class="w-3 h-3 mr-1 text-red-600"></i> Costco
+                                        </span>
+                                    {% elif prod.site_name == 'Amazon' %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                            <i data-lucide="store" class="w-3 h-3 mr-1 text-amber-600"></i> Amazon
+                                        </span>
+                                    {% elif prod.site_name == 'Walmart' %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
+                                            <i data-lucide="store" class="w-3 h-3 mr-1 text-sky-600"></i> Walmart
+                                        </span>
+                                    {% elif prod.site_name == 'Target' %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                                            <i data-lucide="store" class="w-3 h-3 mr-1 text-rose-600"></i> Target
+                                        </span>
+                                    {% else %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                            <i data-lucide="store" class="w-3 h-3 mr-1 text-slate-400"></i> {{ prod.site_name or 'Retailer' }}
+                                        </span>
+                                    {% endif %}
+
+                                    <span class="text-slate-300">•</span>
+
+                                    <!-- Last Checked -->
+                                    <span class="text-slate-500 flex items-center space-x-1">
                                         <i data-lucide="clock" class="w-3.5 h-3.5"></i>
-                                        <span>Updated: {{ prod.last_scraped_at|format_date }}</span>
+                                        <span>Checked: {{ prod.last_scraped_at|format_date }}</span>
                                     </span>
-                                    <span>•</span>
-                                    <a href="{{ prod.url }}" target="_blank" class="text-indigo-600 hover:underline flex items-center space-x-1">
-                                        <span>Visit Store</span>
+
+                                    <span class="text-slate-300">•</span>
+
+                                    <!-- Visit Store Link -->
+                                    <a href="{{ prod.url }}" target="_blank" class="text-indigo-600 hover:underline flex items-center space-x-1 font-medium">
+                                        <span>Open in {{ prod.site_name }}</span>
                                         <i data-lucide="external-link" class="w-3 h-3"></i>
                                     </a>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Price & Trend -->
+                        <!-- Price & Trend Indicators -->
                         <div class="flex items-center space-x-6 flex-shrink-0 self-end sm:self-center">
-                            <div class="text-right">
+                            <div class="text-right space-y-1">
                                 <div class="text-xl font-bold text-slate-900">
                                     {% if prod.current_price is not none %}
                                         {{ prod.currency }}{{ "%.2f"|format(prod.current_price) }}
@@ -144,22 +277,39 @@
                                     {% endif %}
                                 </div>
 
-                                <!-- Trend badge -->
-                                {% if prod.price_change and prod.price_change < 0 %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
-                                        <i data-lucide="trending-down" class="w-3 h-3 mr-1"></i>
-                                        {{ prod.currency }}{{ "%.2f"|format(prod.price_change|abs) }} ({{ prod.price_change_pct }}%)
-                                    </span>
-                                {% elif prod.price_change and prod.price_change > 0 %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
-                                        <i data-lucide="trending-up" class="w-3 h-3 mr-1"></i>
-                                        +{{ prod.currency }}{{ "%.2f"|format(prod.price_change) }} (+{{ prod.price_change_pct }}%)
-                                    </span>
-                                {% else %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
-                                        No change
-                                    </span>
-                                {% endif %}
+                                <!-- Trend badges -->
+                                <div class="flex flex-col items-end gap-0.5">
+                                    <!-- All-Time Low Badge if applicable -->
+                                    {% if prod.is_all_time_low %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                                            <i data-lucide="sparkles" class="w-3 h-3 mr-1 text-amber-600"></i> All-Time Low!
+                                        </span>
+                                    {% endif %}
+
+                                    <!-- Recent change (vs previous check) -->
+                                    {% if prod.recent_change and prod.recent_change < 0 %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                            <i data-lucide="trending-down" class="w-3 h-3 mr-1"></i>
+                                            ▼ {{ prod.currency }}{{ "%.2f"|format(prod.recent_change|abs) }} ({{ prod.recent_change_pct }}%) vs last check
+                                        </span>
+                                    {% elif prod.recent_change and prod.recent_change > 0 %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800">
+                                            <i data-lucide="trending-up" class="w-3 h-3 mr-1"></i>
+                                            ▲ +{{ prod.currency }}{{ "%.2f"|format(prod.recent_change) }} (+{{ prod.recent_change_pct }}%) vs last check
+                                        </span>
+                                    {% else %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600">
+                                            No change vs last check
+                                        </span>
+                                    {% endif %}
+
+                                    <!-- Overall change (vs start) subtext -->
+                                    {% if prod.initial_price and prod.initial_price != prod.current_price %}
+                                        <span class="text-[11px] text-slate-400">
+                                            Start: {{ prod.currency }}{{ "%.2f"|format(prod.initial_price) }} ({{ "+" if prod.overall_change > 0 else "" }}{{ prod.overall_change_pct }}% overall)
+                                        </span>
+                                    {% endif %}
+                                </div>
                             </div>
 
                             <!-- Actions -->
@@ -187,12 +337,15 @@
         {% else %}
             <div class="text-center py-16 px-4">
                 <div class="w-16 h-16 mx-auto rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-4">
-                    <i data-lucide="shopping-cart" class="w-8 h-8"></i>
+                    <i data-lucide="filter" class="w-8 h-8"></i>
                 </div>
-                <h3 class="text-lg font-semibold text-slate-800">No products tracked yet</h3>
+                <h3 class="text-lg font-semibold text-slate-800">No products match your filter</h3>
                 <p class="text-sm text-slate-500 max-w-sm mx-auto mt-1">
-                    Paste an e-commerce product URL in the box above to start monitoring its price.
+                    Try changing your search term, store filter, or status pill above.
                 </p>
+                <a href="{{ url_for('index') }}" class="mt-4 inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors">
+                    Reset All Filters
+                </a>
             </div>
         {% endif %}
     </div>

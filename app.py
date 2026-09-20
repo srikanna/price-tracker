@@ -47,23 +47,56 @@ def format_date_filter(val):
 
 @app.route("/", methods=["GET"])
 def index():
-    """Main dashboard displaying all tracked products and statistics."""
+    """Main dashboard displaying tracked products with filtering and statistics."""
     products = db.get_all_products()
 
-    # Calculate summary metrics
+    # Query params for filtering
+    filter_type = request.args.get("filter", "all").lower()
+    selected_site = request.args.get("site", "all")
+    search_query = request.args.get("q", "").strip().lower()
+
+    # Calculate summary metrics across all products
     total_products = len(products)
     valid_prices = [p.get("current_price") for p in products if p.get("current_price") is not None]
     avg_price = (sum(valid_prices) / len(valid_prices)) if valid_prices else 0.0
-    price_drops = sum(1 for p in products if (p.get("price_change") or 0) < 0)
-    price_hikes = sum(1 for p in products if (p.get("price_change") or 0) > 0)
+
+    price_drops = sum(1 for p in products if (p.get("recent_change", 0) < 0 or p.get("overall_change", 0) < 0))
+    price_hikes = sum(1 for p in products if (p.get("recent_change", 0) > 0 or p.get("overall_change", 0) > 0))
+    all_time_lows = sum(1 for p in products if p.get("is_all_time_low"))
+
+    # Extract all unique retailer names
+    sites = sorted(list({p.get("site_name", "Retailer") for p in products if p.get("site_name")}))
+
+    # Apply filters
+    filtered_products = products
+    if filter_type == "drops":
+        filtered_products = [p for p in filtered_products if (p.get("recent_change", 0) < 0 or p.get("overall_change", 0) < 0)]
+    elif filter_type == "hikes":
+        filtered_products = [p for p in filtered_products if (p.get("recent_change", 0) > 0 or p.get("overall_change", 0) > 0)]
+    elif filter_type == "lows":
+        filtered_products = [p for p in filtered_products if p.get("is_all_time_low")]
+
+    if selected_site != "all":
+        filtered_products = [p for p in filtered_products if p.get("site_name", "").lower() == selected_site.lower()]
+
+    if search_query:
+        filtered_products = [
+            p for p in filtered_products
+            if search_query in p.get("name", "").lower() or search_query in p.get("url", "").lower() or search_query in p.get("site_name", "").lower()
+        ]
 
     return render_template(
         "index.html",
-        products=products,
+        products=filtered_products,
         total_products=total_products,
         avg_price=avg_price,
         price_drops=price_drops,
         price_hikes=price_hikes,
+        all_time_lows=all_time_lows,
+        sites=sites,
+        filter_type=filter_type,
+        selected_site=selected_site,
+        search_query=search_query,
     )
 
 
