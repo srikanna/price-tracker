@@ -1,0 +1,60 @@
+name: Build & Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: cep-demo-x
+  REGION: us-central1
+  SERVICE_NAME: price-tracker
+  IMAGE_NAME: gcr.io/cep-demo-x/price-tracker
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Build and Push Container Image with Cloud Build
+        run: |
+          gcloud builds submit --tag ${{ env.IMAGE_NAME }}:${{ github.sha }} --tag ${{ env.IMAGE_NAME }}:latest .
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --service-account price-tracker-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --set-env-vars GCP_PROJECT=${{ env.PROJECT_ID }},CRON_SECRET=${{ secrets.CRON_SECRET || 'super-secret-price-tracker-cron-key-12345' }} \
+            --timeout 120s \
+            --memory 512Mi \
+            --cpu 1
+
+      - name: Show Cloud Run Service URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --platform managed --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "=========================================================="
+          echo "Price Tracker successfully deployed to: $SERVICE_URL"
+          echo "=========================================================="

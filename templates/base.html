@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Price Pulse - Smart E-Commerce Price Tracker{% endblock %}</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col font-sans antialiased">
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <a href="{{ url_for('index') }}" class="flex items-center space-x-2 text-indigo-600 font-bold text-xl tracking-tight">
+                        <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-100">
+                            <i data-lucide="trending-down" class="w-5 h-5"></i>
+                        </div>
+                        <span>PricePulse</span>
+                    </a>
+                    <span class="hidden sm:inline-block px-2.5 py-0.5 text-xs font-semibold bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200">
+                        Cloud Firestore & Run
+                    </span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="{{ url_for('index') }}" class="text-sm font-medium text-slate-700 hover:text-indigo-600 flex items-center space-x-1">
+                        <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <button onclick="triggerScrapeAll()" class="hidden md:inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 transition-colors">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5" id="refresh-all-icon"></i>
+                        <span>Check All Prices</span>
+                    </button>
+                    <a href="https://console.cloud.google.com/firestore" target="_blank" class="text-xs text-slate-500 hover:text-indigo-600 flex items-center space-x-1">
+                        <i data-lucide="database" class="w-3.5 h-3.5"></i>
+                        <span>Firestore DB</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages Container -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 w-full">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mb-3 p-4 rounded-lg flex items-start justify-between shadow-sm transition-all
+                        {% if category == 'success' %} bg-emerald-50 border border-emerald-200 text-emerald-800
+                        {% elif category == 'error' %} bg-rose-50 border border-rose-200 text-rose-800
+                        {% elif category == 'warning' %} bg-amber-50 border border-amber-200 text-amber-800
+                        {% else %} bg-indigo-50 border border-indigo-200 text-indigo-800 {% endif %}">
+                        <div class="flex items-center space-x-2">
+                            {% if category == 'success' %}
+                                <i data-lucide="check-circle" class="w-5 h-5 text-emerald-500 flex-shrink-0"></i>
+                            {% elif category == 'error' %}
+                                <i data-lucide="alert-circle" class="w-5 h-5 text-rose-500 flex-shrink-0"></i>
+                            {% elif category == 'warning' %}
+                                <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500 flex-shrink-0"></i>
+                            {% else %}
+                                <i data-lucide="info" class="w-5 h-5 text-indigo-500 flex-shrink-0"></i>
+                            {% endif %}
+                            <span class="text-sm font-medium">{{ message }}</span>
+                        </div>
+                        <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-slate-600">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500">
+            <p>&copy; 2026 PricePulse. Automated Price Tracking with Flask, Firestore & Google Cloud Run.</p>
+            <div class="flex items-center space-x-4 mt-2 sm:mt-0">
+                <span class="flex items-center space-x-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>System Online</span></span>
+                <span>•</span>
+                <a href="/health" class="hover:underline">Healthcheck</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        function triggerScrapeAll() {
+            const icon = document.getElementById('refresh-all-icon');
+            if (icon) icon.classList.add('animate-spin');
+            
+            fetch('/api/scrape-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Cron-Secret': 'super-secret-price-tracker-cron-key-12345'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(`Scrape cycle complete!\nTotal checked: ${data.total}\nUpdated: ${data.updated}\nFailed: ${data.failed}`);
+                window.location.reload();
+            })
+            .catch(err => {
+                alert('Error running price scrape: ' + err);
+                if (icon) icon.classList.remove('animate-spin');
+            });
+        }
+    </script>
+</body>
+</html>
