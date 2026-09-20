@@ -138,20 +138,37 @@ if ($LASTEXITCODE -eq 0) {
     gcloud.cmd projects add-iam-policy-binding $ProjectID --member="serviceAccount:$DeployerEmail" --role="roles/storage.admin" --quiet
     gcloud.cmd projects add-iam-policy-binding $ProjectID --member="serviceAccount:$DeployerEmail" --role="roles/iam.serviceAccountUser" --quiet
 
-    # Generate key for GitHub Actions secret
-    $KeyPath = "$env:TEMP\github-deployer-key.json"
-    gcloud.cmd iam service-accounts keys create $KeyPath --iam-account=$DeployerEmail --quiet
-
-    if (Test-Path $KeyPath) {
-        $keyContent = Get-Content $KeyPath -Raw
-        # Set GitHub repository secrets
-        gh secret set GCP_SA_KEY --body "$keyContent" 2>$null
-        gh secret set CRON_SECRET --body "$CronSecret" 2>$null
-        Remove-Item $KeyPath -Force -ErrorAction SilentlyContinue
-        Write-Host "GitHub Secrets 'GCP_SA_KEY' and 'CRON_SECRET' configured! Any git push to 'main' will automatically build and deploy." -ForegroundColor Green
+    # Configure Workload Identity Federation (Keyless GitHub Authentication)
+    Write-Host "Setting up Workload Identity Federation for GitHub Actions..." -ForegroundColor Cyan
+    $projectNumber = (gcloud.cmd projects describe $ProjectID --format="value(projectNumber)").Trim()
+    
+    $poolCheck = gcloud.cmd iam workload-identity-pools list --location="global" --filter="name:github-pool" --format="value(name)" 2>$null
+    if (-not $poolCheck) {
+        gcloud.cmd iam workload-identity-pools create github-pool --location="global" --display-name="GitHub Actions Pool" --quiet
     }
+    
+    $providerCheck = gcloud.cmd iam workload-identity-pools providers list --workload-identity-pool="github-pool" --location="global" --filter="name:github-provider" --format="value(name)" 2>$null
+    if (-not $providerCheck) {
+        gcloud.cmd iam workload-identity-pools providers create-oidc github-provider `
+            --location="global" `
+            --workload-identity-pool="github-pool" `
+            --display-name="GitHub Provider" `
+            --issuer-uri="https://token.actions.githubusercontent.com" `
+            --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" `
+            --attribute-condition="assertion.repository == 'srikanna/price-tracker'" `
+            --quiet
+    }
+
+    # Bind repo to deployer service account
+    gcloud.cmd iam service-accounts add-iam-policy-binding $DeployerEmail `
+        --role="roles/iam.workloadIdentityUser" `
+        --member="principalSet://iam.googleapis.com/projects/$projectNumber/locations/global/workloadIdentityPools/github-pool/attribute.repository/srikanna/price-tracker" `
+        --quiet
+
+    gh secret set CRON_SECRET --body "$CronSecret" 2>$null
+    Write-Host "Workload Identity Federation configured! Any git push to 'main' will automatically build and deploy." -ForegroundColor Green
 } else {
-    Write-Host "GitHub CLI not authenticated or no remote configured. You can manually configure the GCP_SA_KEY secret in GitHub." -ForegroundColor Yellow
+    Write-Host "GitHub CLI not authenticated or no remote configured." -ForegroundColor Yellow
 }
 
 Write-Host "`n==========================================================" -ForegroundColor Green
