@@ -44,7 +44,7 @@ jobs:
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
             --service-account price-tracker-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
-            --set-env-vars GCP_PROJECT=${{ env.PROJECT_ID }},CRON_SECRET=${{ secrets.CRON_SECRET || 'super-secret-price-tracker-cron-key-12345' }} \
+            --update-env-vars GCP_PROJECT=${{ env.PROJECT_ID }},CRON_SECRET=${{ secrets.CRON_SECRET || 'super-secret-price-tracker-cron-key-12345' }} \
             --timeout 120s \
             --memory 512Mi \
             --cpu 1

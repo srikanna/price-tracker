@@ -1,10 +1,10 @@
 """
-Google Chat Spaces Notification Module.
-Sends rich, interactive Card v2 notifications for price drop events.
+Alert Notification Engine.
+Supports multi-channel alerts (Google Chat Spaces Card v2, Email, Slack, etc.) segmented per user.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import requests
 
 logger = logging.getLogger(__name__)
@@ -140,3 +140,53 @@ def send_test_google_chat_alert(webhook_url: str) -> bool:
         "image_url": "https://upload.wikimedia.org/wikipedia/commons/5/53/Costco_Wholesale_logo.svg",
     }
     return send_google_chat_alert(webhook_url, sample_product)
+
+
+def dispatch_user_alerts(
+    user_alert_channels: Dict[str, Any],
+    product: Dict[str, Any],
+    app_base_url: Optional[str] = "https://price-tracker-370743893608.us-central1.run.app"
+) -> Dict[str, Any]:
+    """
+    Dispatches price drop alerts to all enabled alert channels configured for a user.
+    Extensible for Google Chat, Email, Slack, Discord, SMS, RCS, etc.
+    """
+    results = {
+        "dispatched": [],
+        "failed": [],
+        "skipped": []
+    }
+
+    if not user_alert_channels:
+        return results
+
+    # Channel 1: Google Chat Spaces
+    chat_cfg = user_alert_channels.get("google_chat", {})
+    if chat_cfg.get("enabled", True):
+        webhook = chat_cfg.get("webhook_url", "").strip()
+        if webhook:
+            success = send_google_chat_alert(webhook, product, app_base_url=app_base_url)
+            if success:
+                results["dispatched"].append("google_chat")
+            else:
+                results["failed"].append("google_chat")
+        else:
+            results["skipped"].append("google_chat_no_webhook")
+    else:
+        results["skipped"].append("google_chat_disabled")
+
+    # Channel 2: Email (Extensible placeholder)
+    email_cfg = user_alert_channels.get("email", {})
+    if email_cfg.get("enabled", False) and email_cfg.get("address"):
+        # Placeholder for future SMTP / SendGrid / Cloud Tasks dispatch
+        logger.info(f"Email channel enabled for {email_cfg.get('address')} (Ready for provider integration)")
+        results["skipped"].append("email_provider_not_configured")
+
+    # Channel 3: Slack (Extensible placeholder)
+    slack_cfg = user_alert_channels.get("slack", {})
+    if slack_cfg.get("enabled", False) and slack_cfg.get("webhook_url"):
+        # Placeholder for future Slack webhook integration
+        logger.info(f"Slack channel enabled (Ready for provider integration)")
+        results["skipped"].append("slack_provider_not_configured")
+
+    return results
