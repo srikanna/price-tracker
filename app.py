@@ -68,14 +68,49 @@ def format_date_filter(val):
     return str(val)
 
 
+def resolve_current_user():
+    """
+    Resolves the authenticated user from:
+    1. Google Cloud Identity-Aware Proxy (IAP) headers (X-Goog-Authenticated-User-Email, X-Goog-Authenticated-User-Id).
+    2. Active Flask session (from Google OAuth or dev sign-in).
+    """
+    iap_email_header = request.headers.get("X-Goog-Authenticated-User-Email")
+    iap_id_header = request.headers.get("X-Goog-Authenticated-User-Id")
+
+    if iap_email_header:
+        # e.g. "accounts.google.com:alice@example.com"
+        email = iap_email_header.split(":")[-1].strip()
+        user_id = iap_id_header.split(":")[-1].strip() if iap_id_header else email
+
+        if email:
+            user = db.get_or_create_user({
+                "id": user_id,
+                "email": email,
+                "name": email.split("@")[0].capitalize(),
+                "picture": f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}",
+            })
+            session["user"] = {
+                "id": user["id"],
+                "email": user["email"],
+                "name": user["name"],
+                "picture": user.get("picture", ""),
+                "auth_source": "iap",
+            }
+            return session["user"]
+
+    return session.get("user")
+
+
 @app.context_processor
 def inject_user_and_globals():
     """Injects current logged-in user and OAuth status into all templates."""
     oauth_cfg = db.get_oauth_config()
     has_oauth = bool(oauth_cfg.get("client_id") and oauth_cfg.get("client_secret"))
+    user = resolve_current_user()
     return {
-        "current_user": session.get("user"),
+        "current_user": user,
         "has_google_oauth": has_oauth,
+        "is_iap_active": bool(request.headers.get("X-Goog-Authenticated-User-Email")),
     }
 
 
@@ -84,10 +119,11 @@ def inject_user_and_globals():
 # ---------------------------------------------------------------------------
 
 def login_required(f):
-    """Ensures endpoint is accessible only to authenticated users."""
+    """Ensures endpoint is accessible only to authenticated users (via IAP or session)."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user" not in session:
+        user = resolve_current_user()
+        if not user:
             session["next_url"] = request.url
             return redirect(url_for("login"))
         return f(*args, **kwargs)
@@ -96,8 +132,8 @@ def login_required(f):
 
 @app.route("/login", methods=["GET"])
 def login():
-    """Displays Sign in with Google page."""
-    if "user" in session:
+    """Displays Sign in with Google page (bypassed if Google IAP is active)."""
+    if resolve_current_user():
         return redirect(url_for("index"))
 
     oauth_cfg = db.get_oauth_config()
