@@ -25,7 +25,8 @@ from flask import (
     g,
 )
 
-from scraper import scrape_product
+from collections import defaultdict
+from scraper import scrape_product, canonicalize_url
 import db
 from notifier import send_test_google_chat_alert, dispatch_user_alerts
 
@@ -387,10 +388,13 @@ def index():
 def track():
     """Handles submission of a new product URL to track for the current user."""
     user_id = session["user"]["id"]
-    url = request.form.get("url", "").strip()
-    if not url:
+    raw_url = request.form.get("url", "").strip()
+    if not raw_url:
         flash("Please provide a valid URL.", "error")
         return redirect(url_for("index"))
+
+    # Canonicalize and clean URL (strips tracking tags, normalizes store SKUs)
+    url = canonicalize_url(raw_url)
 
     logger.info(f"User {user_id} scraping new URL: {url}")
     scraped = scrape_product(url)
@@ -607,78 +611,90 @@ def scrape_all():
     # Fetch all active products across all users
     products = db.get_all_active_products_all_users()
 
+    # Deduplicate: group products by canonical URL so each website URL is scraped only ONCE
+    url_groups = defaultdict(list)
+    for prod in products:
+        c_url = canonicalize_url(prod.get("url", ""))
+        url_groups[c_url].append(prod)
+
     results = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "total_active": len(products),
+        "total_active_items": len(products),
+        "unique_urls_scraped": len(url_groups),
         "updated": 0,
         "failed": 0,
         "alerts_sent": 0,
         "details": [],
     }
 
-    logger.info(f"Starting scheduled scrape for {len(products)} active products across users...")
+    logger.info(f"Starting scheduled scrape for {len(products)} active items across {len(url_groups)} unique URLs...")
 
-    for prod in products:
-        url = prod.get("url")
-        prod_id = prod.get("id")
-        user_id = prod.get("user_id", "default_user")
-        old_price = prod.get("current_price")
-        alerts_enabled = prod.get("alerts_enabled", True)
-
+    for canon_url, prods in url_groups.items():
         try:
-            scraped = scrape_product(url)
-            if scraped.get("price") is not None:
-                new_price = scraped["price"]
-                updated = db.save_or_update_product(
-                    url=url,
-                    name=scraped.get("name") or prod.get("name"),
-                    price=new_price,
-                    currency=scraped.get("currency", prod.get("currency", "$")),
-                    image_url=scraped.get("image_url") or prod.get("image_url"),
-                    user_id=user_id,
-                )
-                results["updated"] += 1
+            # Scrape retailer website ONCE for this canonical URL
+            scraped = scrape_product(canon_url)
+            price_found = scraped.get("price") is not None
 
-                # Check for price drop alert to this specific user's channels
-                alert_dispatched = False
-                if alerts_enabled and old_price is not None and new_price < old_price:
-                    last_alerted = prod.get("last_alerted_price")
-                    if last_alerted is None or new_price < last_alerted:
-                        user_channels = db.get_user_alert_channels(user_id)
-                        alert_res = dispatch_user_alerts(user_channels, updated)
-                        if alert_res.get("dispatched"):
-                            alert_dispatched = True
-                            results["alerts_sent"] += len(alert_res["dispatched"])
-                            db.update_last_alerted_price(prod_id, new_price)
+            # Distribute results to every user tracking this product
+            for prod in prods:
+                prod_id = prod.get("id")
+                user_id = prod.get("user_id", "default_user")
+                old_price = prod.get("current_price")
+                alerts_enabled = prod.get("alerts_enabled", True)
 
-                results["details"].append({
-                    "id": prod_id,
-                    "user_id": user_id,
-                    "name": updated.get("name"),
-                    "site_name": updated.get("site_name"),
-                    "price": updated.get("current_price"),
-                    "alert_sent": alert_dispatched,
-                    "status": "success",
-                })
-            else:
+                if price_found:
+                    new_price = scraped["price"]
+                    updated = db.save_or_update_product(
+                        url=canon_url,
+                        name=scraped.get("name") or prod.get("name"),
+                        price=new_price,
+                        currency=scraped.get("currency", prod.get("currency", "$")),
+                        image_url=scraped.get("image_url") or prod.get("image_url"),
+                        user_id=user_id,
+                    )
+                    results["updated"] += 1
+
+                    # Check for price drop alert to this specific user's channels
+                    alert_dispatched = False
+                    if alerts_enabled and old_price is not None and new_price < old_price:
+                        last_alerted = prod.get("last_alerted_price")
+                        if last_alerted is None or new_price < last_alerted:
+                            user_channels = db.get_user_alert_channels(user_id)
+                            alert_res = dispatch_user_alerts(user_channels, updated)
+                            if alert_res.get("dispatched"):
+                                alert_dispatched = True
+                                results["alerts_sent"] += len(alert_res["dispatched"])
+                                db.update_last_alerted_price(prod_id, new_price)
+
+                    results["details"].append({
+                        "id": prod_id,
+                        "user_id": user_id,
+                        "name": updated.get("name"),
+                        "site_name": updated.get("site_name"),
+                        "price": updated.get("current_price"),
+                        "alert_sent": alert_dispatched,
+                        "status": "success",
+                    })
+                else:
+                    results["failed"] += 1
+                    results["details"].append({
+                        "id": prod_id,
+                        "user_id": user_id,
+                        "name": prod.get("name"),
+                        "status": "price_not_found",
+                        "error": scraped.get("error"),
+                    })
+        except Exception as e:
+            logger.error(f"Error scraping {canon_url}: {e}")
+            for prod in prods:
                 results["failed"] += 1
                 results["details"].append({
-                    "id": prod_id,
-                    "user_id": user_id,
+                    "id": prod.get("id"),
+                    "user_id": prod.get("user_id"),
                     "name": prod.get("name"),
-                    "status": "price_not_found",
-                    "error": scraped.get("error"),
+                    "status": "exception",
+                    "error": str(e),
                 })
-        except Exception as e:
-            logger.error(f"Error scraping {url}: {e}")
-            results["failed"] += 1
-            results["details"].append({
-                "id": prod_id,
-                "user_id": user_id,
-                "name": prod.get("name"),
-                "status": "exception",
-                "error": str(e),
-            })
 
     logger.info(f"Completed scheduled scrape: {results['updated']} updated, {results['failed']} failed, {results['alerts_sent']} alerts sent.")
     return jsonify(results), 200

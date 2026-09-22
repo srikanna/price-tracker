@@ -12,10 +12,98 @@ import json
 import logging
 import re
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 import requests
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "gclid", "fbclid", "msclkid", "mc_cid", "spm", "ref", "ref_", "tag",
+    "linkcode", "psc", "qid", "sr", "keywords", "pd_rd_w", "pd_rd_r", "pf_rd_p",
+    "pd_rd_i", "pf_rd_r", "pd_rd_wg", "th", "session-id", "session_id",
+    "costid", "sh", "nf", "athbdg", "from",
+}
+
+
+def canonicalize_url(url: str) -> str:
+    """
+    Cleans and canonicalizes an e-commerce URL.
+    Extracts canonical product identifiers for major retailers (Amazon, Costco, Walmart, Target, Best Buy)
+    and strips tracking/marketing query parameters and fragments.
+    """
+    if not url:
+        return ""
+
+    url = url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        url = "https://" + url
+
+    # 1. Amazon: Extract ASIN (10 alphanumeric characters)
+    if "amazon." in url.lower():
+        asin_match = re.search(r"/(?:dp|gp/product|exec/obidos/ASIN)/([A-Z0-9]{10})(?:[/?#]|$)", url, re.IGNORECASE)
+        if asin_match:
+            asin = asin_match.group(1).upper()
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            if domain.startswith("www."):
+                domain = domain[4:]
+            return f"https://{domain}/dp/{asin}"
+
+    # 2. Costco: Extract Item/Product ID
+    if "costco." in url.lower():
+        costco_match = re.search(r"\.product\.(\d+)\.html", url, re.IGNORECASE) or re.search(r"/product/(\d+)", url, re.IGNORECASE)
+        if costco_match:
+            item_id = costco_match.group(1)
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            if domain.startswith("www."):
+                domain = domain[4:]
+            return f"https://{domain}/product.{item_id}.html"
+
+    # 3. Walmart: Extract Product ID
+    if "walmart." in url.lower():
+        walmart_match = re.search(r"/ip/(?:[^/]+/)?(\d+)(?:[/?#]|$)", url, re.IGNORECASE)
+        if walmart_match:
+            item_id = walmart_match.group(1)
+            return f"https://walmart.com/ip/{item_id}"
+
+    # 4. Target: Extract TCIN
+    if "target." in url.lower():
+        target_match = re.search(r"/A-(\d+)", url) or re.search(r"tcin=(\d+)", url)
+        if target_match:
+            tcin = target_match.group(1)
+            return f"https://target.com/p/-/A-{tcin}"
+
+    # 5. Best Buy: Extract SKU ID
+    if "bestbuy." in url.lower():
+        bb_match = re.search(r"/(\d{7})\.p", url) or re.search(r"skuId=(\d{7})", url)
+        if bb_match:
+            sku = bb_match.group(1)
+            return f"https://bestbuy.com/site/{sku}.p"
+
+    # Universal Cleaner: Strip tracking and marketing parameters
+    parsed = urlparse(url)
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+
+    # Parse and clean query string
+    qs = parse_qs(parsed.query)
+    clean_qs = {k: v for k, v in qs.items() if k.lower() not in TRACKING_PARAMS}
+
+    # Normalize path (remove trailing slash unless root)
+    path = parsed.path.rstrip("/") if parsed.path != "/" else "/"
+
+    return urlunparse((
+        "https",
+        netloc,
+        path,
+        "",
+        urlencode(clean_qs, doseq=True),
+        "",  # Strip fragment
+    ))
 
 # Realistic browser headers to prevent basic bot-blocking
 DEFAULT_HEADERS = {

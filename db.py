@@ -11,6 +11,7 @@ import os
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
+from scraper import canonicalize_url
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +45,9 @@ _LOCAL_SETTINGS: Dict[str, Any] = {}
 
 def generate_product_id(url: str, user_id: Optional[str] = None) -> str:
     """
-    Generates a stable document ID from a URL scoped by user_id for multi-tenancy.
+    Generates a stable document ID from a canonicalized URL scoped by user_id for multi-tenancy.
     """
-    norm_url = url.strip().rstrip("/")
+    norm_url = canonicalize_url(url)
     if user_id:
         return hashlib.sha256(f"{user_id}:{norm_url}".encode("utf-8")).hexdigest()[:20]
     return hashlib.sha256(norm_url.encode("utf-8")).hexdigest()[:20]
@@ -215,18 +216,18 @@ def update_user_alert_channels(user_id: str, alert_channels: Dict[str, Any]) -> 
     client = get_firestore_client()
     if client:
         try:
-            client.collection("users").document(user_id).update({
+            client.collection("users").document(user_id).set({
                 "alert_channels": alert_channels
-            })
+            }, merge=True)
             return True
         except Exception as e:
             logger.error(f"Error updating alert channels for {user_id}: {e}")
             return False
     else:
-        if user_id in _LOCAL_USERS:
-            _LOCAL_USERS[user_id]["alert_channels"] = alert_channels
-            return True
-        return False
+        if user_id not in _LOCAL_USERS:
+            _LOCAL_USERS[user_id] = {"id": user_id}
+        _LOCAL_USERS[user_id]["alert_channels"] = alert_channels
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +274,7 @@ def save_or_update_product(
     """
     Saves a newly tracked product or updates an existing one for a specific user.
     """
+    url = canonicalize_url(url)
     client = get_firestore_client()
     prod_id = generate_product_id(url, user_id)
     now = datetime.now(timezone.utc)
