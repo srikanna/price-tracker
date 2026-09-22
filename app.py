@@ -395,15 +395,43 @@ def track():
 
     # Canonicalize and clean URL (strips tracking tags, normalizes store SKUs)
     url = canonicalize_url(raw_url)
+    prod_id = db.generate_product_id(url)
 
-    logger.info(f"User {user_id} scraping new URL: {url}")
+    # 1. Check if user is ALREADY subscribed to this product
+    user_prod = db.get_product(prod_id, user_id=user_id)
+    if user_prod:
+        if user_prod.get("is_archived"):
+            db.toggle_product_archive(prod_id, is_archived=False, user_id=user_id)
+            flash(f"'{user_prod['name']}' was in your archive and has been restored to your active tracking list!", "info")
+            return redirect(url_for("index"))
+        else:
+            flash(f"You are already tracking '{user_prod['name']}'.", "info")
+            return redirect(url_for("product_detail", product_id=prod_id))
+
+    # 2. Fast-Path: Check if product already exists in canonical catalog (scraped by another user)
+    existing_canonical = db.get_canonical_product(prod_id)
+    if existing_canonical and existing_canonical.get("current_price") is not None:
+        logger.info(f"Instant match for user {user_id}: Subscribing to existing canonical product {prod_id}")
+        db.subscribe_user_to_product(
+            user_id=user_id,
+            product_id=prod_id,
+            user_initial_price=existing_canonical.get("current_price"),
+        )
+        flash(
+            f"⚡ Instant Match! '{existing_canonical['name']}' ({existing_canonical['site_name']}) is already tracked in our system. Full price history loaded instantly!",
+            "success",
+        )
+        return redirect(url_for("product_detail", product_id=prod_id))
+
+    # 3. New URL: Scrape retailer website
+    logger.info(f"User {user_id} scraping new canonical URL: {url}")
     scraped = scrape_product(url)
 
     if scraped.get("error") and not scraped.get("name"):
         flash(f"Scraping failed: {scraped['error']}", "error")
         return redirect(url_for("index"))
 
-    # Save to Firestore scoped by user_id
+    # Save to canonical catalog and subscribe user
     saved = db.save_or_update_product(
         url=scraped["url"],
         name=scraped["name"] or "Tracked Product",
@@ -551,7 +579,7 @@ def refresh_product(product_id):
         if product.get("alerts_enabled") and not product.get("is_archived") and old_price and scraped["price"] < old_price:
             user_channels = db.get_user_alert_channels(user_id)
             dispatch_user_alerts(user_channels, updated)
-            db.update_last_alerted_price(product_id, scraped["price"])
+            db.update_last_alerted_price(product_id, scraped["price"], user_id=user_id)
     else:
         flash(f"Could not retrieve updated price: {scraped.get('error', 'Unknown error')}", "error")
 
@@ -571,15 +599,16 @@ def delete_product(product_id):
 
 
 # ---------------------------------------------------------------------------
-# Background Scheduler Batch Scrape Endpoint (Multi-Tenant)
+# Background Scheduler Batch Scrape Endpoint (Multi-Tenant Canonical Model)
 # ---------------------------------------------------------------------------
 
 @app.route("/api/scrape-all", methods=["POST"])
 def scrape_all():
     """
-    Secure endpoint triggered by Google Cloud Scheduler to update all active tracked URLs across all users.
+    Secure endpoint triggered by Google Cloud Scheduler to update all active tracked URLs.
     Protected by CRON_SECRET or Google Cloud Scheduler service account identity.
-    Dispatches alerts to each product owner's configured channels when price drops.
+    Scrapes each canonical product exactly ONCE, records history in the shared catalog,
+    and fans out price drop alerts to each active subscriber.
     """
     auth_header = request.headers.get("Authorization", "")
     secret_header = request.headers.get("X-Cron-Secret", "")
@@ -608,93 +637,94 @@ def scrape_all():
         logger.warning("Unauthorized access attempt to /api/scrape-all")
         return jsonify({"error": "Unauthorized. Provide valid X-Cron-Secret or Bearer token."}), 401
 
-    # Fetch all active products across all users
-    products = db.get_all_active_products_all_users()
-
-    # Deduplicate: group products by canonical URL so each website URL is scraped only ONCE
-    url_groups = defaultdict(list)
-    for prod in products:
-        c_url = canonicalize_url(prod.get("url", ""))
-        url_groups[c_url].append(prod)
+    # Fetch canonical products that have at least 1 active (unarchived) user subscription
+    canonical_items = db.get_active_subscriptions_and_canonical_products()
+    total_subscriptions = sum(len(c.get("subscribers", [])) for c in canonical_items)
 
     results = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "total_active_items": len(products),
-        "unique_urls_scraped": len(url_groups),
+        "total_canonical_products": len(canonical_items),
+        "total_active_subscriptions": total_subscriptions,
         "updated": 0,
         "failed": 0,
         "alerts_sent": 0,
         "details": [],
     }
 
-    logger.info(f"Starting scheduled scrape for {len(products)} active items across {len(url_groups)} unique URLs...")
+    logger.info(f"Starting scheduled scrape for {len(canonical_items)} canonical products ({total_subscriptions} active subscriptions)...")
 
-    for canon_url, prods in url_groups.items():
+    for item in canonical_items:
+        prod_id = item["id"]
+        canon_url = item["url"]
+        subscribers = item.get("subscribers", [])
+        old_price = item.get("current_price")
+
         try:
-            # Scrape retailer website ONCE for this canonical URL
+            # Scrape retailer website ONCE for this canonical product
             scraped = scrape_product(canon_url)
             price_found = scraped.get("price") is not None
 
-            # Distribute results to every user tracking this product
-            for prod in prods:
-                prod_id = prod.get("id")
-                user_id = prod.get("user_id", "default_user")
-                old_price = prod.get("current_price")
-                alerts_enabled = prod.get("alerts_enabled", True)
+            if price_found:
+                new_price = scraped["price"]
+                # 1. Update shared canonical product catalog
+                updated_canon = db.save_or_update_canonical_product(
+                    url=canon_url,
+                    name=scraped.get("name") or item.get("name"),
+                    price=new_price,
+                    currency=scraped.get("currency", item.get("currency", "$")),
+                    image_url=scraped.get("image_url") or item.get("image_url"),
+                )
+                results["updated"] += 1
 
-                if price_found:
-                    new_price = scraped["price"]
-                    updated = db.save_or_update_product(
-                        url=canon_url,
-                        name=scraped.get("name") or prod.get("name"),
-                        price=new_price,
-                        currency=scraped.get("currency", prod.get("currency", "$")),
-                        image_url=scraped.get("image_url") or prod.get("image_url"),
-                        user_id=user_id,
-                    )
-                    results["updated"] += 1
+                # 2. Fan out alerts to each interested subscriber
+                subscribers_alerted = 0
+                for sub in subscribers:
+                    user_id = sub.get("user_id")
+                    alerts_enabled = sub.get("alerts_enabled", True)
 
-                    # Check for price drop alert to this specific user's channels
-                    alert_dispatched = False
+                    # Alert if subscriber enabled alerts and price dropped below previous price
                     if alerts_enabled and old_price is not None and new_price < old_price:
-                        last_alerted = prod.get("last_alerted_price")
+                        last_alerted = sub.get("last_alerted_price")
+                        # Prevent spamming if price hasn't dropped further
                         if last_alerted is None or new_price < last_alerted:
                             user_channels = db.get_user_alert_channels(user_id)
-                            alert_res = dispatch_user_alerts(user_channels, updated)
+                            merged_user_prod = db.merge_canonical_and_subscription(updated_canon, sub)
+                            alert_res = dispatch_user_alerts(user_channels, merged_user_prod)
                             if alert_res.get("dispatched"):
-                                alert_dispatched = True
                                 results["alerts_sent"] += len(alert_res["dispatched"])
-                                db.update_last_alerted_price(prod_id, new_price)
+                                subscribers_alerted += 1
+                                db.update_subscription_last_alerted_price(user_id, prod_id, new_price)
 
-                    results["details"].append({
-                        "id": prod_id,
-                        "user_id": user_id,
-                        "name": updated.get("name"),
-                        "site_name": updated.get("site_name"),
-                        "price": updated.get("current_price"),
-                        "alert_sent": alert_dispatched,
-                        "status": "success",
-                    })
-                else:
-                    results["failed"] += 1
-                    results["details"].append({
-                        "id": prod_id,
-                        "user_id": user_id,
-                        "name": prod.get("name"),
-                        "status": "price_not_found",
-                        "error": scraped.get("error"),
-                    })
-        except Exception as e:
-            logger.error(f"Error scraping {canon_url}: {e}")
-            for prod in prods:
+                results["details"].append({
+                    "id": prod_id,
+                    "url": canon_url,
+                    "name": updated_canon.get("name"),
+                    "site_name": updated_canon.get("site_name"),
+                    "price": new_price,
+                    "old_price": old_price,
+                    "subscribers_count": len(subscribers),
+                    "subscribers_alerted": subscribers_alerted,
+                    "status": "success",
+                })
+            else:
                 results["failed"] += 1
                 results["details"].append({
-                    "id": prod.get("id"),
-                    "user_id": prod.get("user_id"),
-                    "name": prod.get("name"),
-                    "status": "exception",
-                    "error": str(e),
+                    "id": prod_id,
+                    "url": canon_url,
+                    "name": item.get("name"),
+                    "status": "price_not_found",
+                    "error": scraped.get("error"),
                 })
+        except Exception as e:
+            logger.error(f"Error scraping canonical product {prod_id} ({canon_url}): {e}")
+            results["failed"] += 1
+            results["details"].append({
+                "id": prod_id,
+                "url": canon_url,
+                "name": item.get("name"),
+                "status": "exception",
+                "error": str(e),
+            })
 
     logger.info(f"Completed scheduled scrape: {results['updated']} updated, {results['failed']} failed, {results['alerts_sent']} alerts sent.")
     return jsonify(results), 200
