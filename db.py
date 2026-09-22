@@ -109,8 +109,8 @@ def get_or_create_user(user_info: Dict[str, Any]) -> Dict[str, Any]:
 
     default_channels = {
         "google_chat": {
-            "enabled": True,
-            "webhook_url": get_global_settings().get("google_chat_webhook", "")
+            "enabled": False,
+            "webhook_url": ""
         },
         "email": {
             "enabled": False,
@@ -198,12 +198,10 @@ def get_user_alert_channels(user_id: str) -> Dict[str, Any]:
     if user and user.get("alert_channels"):
         return user["alert_channels"]
     
-    # Fallback to global config
-    global_hook = get_global_settings().get("google_chat_webhook", "")
     return {
         "google_chat": {
-            "enabled": bool(global_hook),
-            "webhook_url": global_hook
+            "enabled": False,
+            "webhook_url": ""
         },
         "email": {
             "enabled": False,
